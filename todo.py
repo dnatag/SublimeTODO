@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-## TODO: Implement TODO_IGNORE setting (http://mdeering.com/posts/004-get-your-textmate-todos-and-fixmes-under-control)
-## TODO: Make the output clickable (å la find results)
-## TODO: Occasional NoneType bug
-## todo: Make the sections foldable (define them as regions?)
+# TODO: Implement TODO_IGNORE setting (http://mdeering.com/posts/004-get-your-textmate-todos-and-fixmes-under-control)
+# TODO: Make the output clickable (å la find results)
+# TODO: Occasional NoneType bug
+# todo: Make the sections foldable (define them as regions?)
 
 """"""
 
@@ -38,11 +38,12 @@ DEFAULT_SETTINGS = {
 
 Message = namedtuple('Message', 'type, msg')
 
-## LOGGING SETUP
+# LOGGING SETUP
 try:
     from logging import NullHandler
 except ImportError:
     class NullHandler(logging.Handler):
+
         def handle(self, record):
             pass
 
@@ -69,17 +70,20 @@ def do_when(conditional, callback, *args, **kwargs):
 
 
 class Settings(dict):
+
     """Combine default and user settings"""
+
     def __init__(self, user_settings):
         settings = DEFAULT_SETTINGS.copy()
         settings.update(user_settings)
-        ## Combine core_patterns and patterns
+        # Combine core_patterns and patterns
         settings['core_patterns'].update(settings['patterns'])
         settings['patterns'] = settings.pop('core_patterns')
         super(Settings, self).__init__(settings)
 
 
 class ThreadProgress(object):
+
     def __init__(self, thread, message, success_message, file_counter):
         self.thread = thread
         self.message = message
@@ -110,6 +114,7 @@ class ThreadProgress(object):
 
 
 class TodoExtractor(object):
+
     def __init__(
         self, settings, filepaths, dirpaths, ignored_dirs, ignored_file_patterns,
             file_counter):
@@ -138,12 +143,13 @@ class TodoExtractor(object):
         for dirpath in dirs:
             dirpath = path.abspath(dirpath)
             for dirpath, dirnames, filenames in walk(dirpath):
-                ## remove excluded dirs
+                # remove excluded dirs
                 # TODO: These are not patterns. Consider making them glob
                 # patterns
                 for dir in exclude_dirs:
                     if dir in dirnames:
-                        self.log.debug(u'SublimeTODO ignoring dir: {0}'.format(dir))
+                        self.log.debug(
+                            u'SublimeTODO ignoring dir: {0}'.format(dir))
                         dirnames.remove(dir)
 
                 for filepath in filenames:
@@ -178,13 +184,13 @@ class TodoExtractor(object):
                 self.log.debug(u'SublimeTODO scanning {0}'.format(filepath))
                 for linenum, line in enumerate(f):
                     for mo in patt.finditer(line):
-                        ## Remove the non-matched groups
+                        # Remove the non-matched groups
                         matches = [Message(msg_type, msg) for msg_type,
                                    msg in mo.groupdict().items() if msg]
                         for match in matches:
                             yield {'filepath': filepath, 'linenum': linenum + 1, 'match': match}
             except (IOError, UnicodeDecodeError):
-                ## Probably a broken symlink
+                # Probably a broken symlink
                 f = None
             finally:
                 self.file_counter.increment()
@@ -221,11 +227,11 @@ class RenderResultRunCommand(sublime_plugin.TextCommand):
         result_view.insert(edit, result_view.size(), header)
         # result_view.end_edit(edit)
 
-        ## Region : match_dicts
+        # Region : match_dicts
         # 2 row list, where the first is region and the second is data
         regions_data = [x[:] for x in [[]] * 2]
 
-        # ## Result sections
+        # Result sections
         for linetype, line, data in formatted_results:
             # edit = result_view.begin_edit()
             insert_point = result_view.size()
@@ -239,15 +245,15 @@ class RenderResultRunCommand(sublime_plugin.TextCommand):
 
         result_view.add_regions('results', regions_data[0], '')
 
-        ## Store {Region : data} map in settings
-        ## TODO: Abstract this out to a storage class Storage.get(region) ==> data dict
-        ## Region() cannot be stored in settings, so convert to a primitive type
+        # Store {Region : data} map in settings
+        # TODO: Abstract this out to a storage class Storage.get(region) ==> data dict
+        # Region() cannot be stored in settings, so convert to a primitive type
         # d_ = regions
         d_ = dict(('{0},{1}'.format(k.a, k.b), v)
-            for k, v in zip(regions_data[0], regions_data[1]))
+                  for k, v in zip(regions_data[0], regions_data[1]))
         result_view.settings().set('result_regions', d_)
 
-        ## Set syntax and settings
+        # Set syntax and settings
         result_view.assign_syntax(
             'Packages/SublimeTODO/todo_results.hidden-tmLanguage')
         result_view.settings().set('line_padding_bottom', 2)
@@ -258,6 +264,7 @@ class RenderResultRunCommand(sublime_plugin.TextCommand):
 
 
 class WorkerThread(threading.Thread):
+
     def __init__(self, extractor, callback, file_counter):
         self.extractor = extractor
         # self.renderer = renderer
@@ -266,7 +273,7 @@ class WorkerThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def run(self):
-        ## Extract in this thread
+        # Extract in this thread
         todos = self.extractor.extract()
         formatted = list(self.format(todos))
 
@@ -296,7 +303,9 @@ class WorkerThread(threading.Thread):
 
 
 class FileScanCounter(object):
+
     """Thread-safe counter used to update the status bar"""
+
     def __init__(self):
         self.ct = 0
         self.lock = threading.RLock()
@@ -330,15 +339,19 @@ class TodoCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, open_files_only=False):
         window = self.view.window()
-        settings = Settings(self.view.settings().get('todo', {}))
 
-        ## TODO: Cleanup this init code. Maybe move it to the settings object
+        user_settings = self.view.settings().get('todo', {})
+        project_settings = window.project_data().get('todo', {})
+        settings = Settings(
+            list(user_settings.items()) + list(project_settings.items()))
+
+        # TODO: Cleanup this init code. Maybe move it to the settings object
         filepaths, dirpaths = self.search_paths(
             window, open_files_only=open_files_only)
 
         ignored_dirs = settings.get('folder_exclude_patterns', [])
-        ## Get exclude patterns from global settings
-        ## Is there really no better way to access global settings?
+        # Get exclude patterns from global settings
+        # Is there really no better way to access global settings?
         global_settings = sublime.load_settings('Global.sublime-settings')
         ignored_dirs.extend(global_settings.get('folder_exclude_patterns', []))
 
@@ -394,30 +407,32 @@ class NavigateResults(sublime_plugin.TextCommand):
             selection = 0
 
         settings.set('selected_result', selection)
-        ## Create a new region for highlighting
+        # Create a new region for highlighting
         target = target.cover(target)
         view.add_regions('selection', [target], 'selected', 'dot')
         view.show(target)
 
 
 class ClearSelection(sublime_plugin.TextCommand):
+
     def run(self, edit):
         self.view.erase_regions('selection')
         self.view.settings().erase('selected_result')
 
 
 class GotoComment(sublime_plugin.TextCommand):
+
     def __init__(self, *args):
         self.log = logging.getLogger('SublimeTODO.nav')
         super(GotoComment, self).__init__(*args)
 
     def run(self, edit):
-        ## Get the idx of selected result region
+        # Get the idx of selected result region
         selection = int(self.view.settings().get('selected_result', -1))
-        ## Get the region
+        # Get the region
         selected_region = self.view.get_regions('results')[selection]
-        ## Convert region to key used in result_regions (this is tedious, but
-        ##    there is no other way to store regions with associated data)
+        # Convert region to key used in result_regions (this is tedious, but
+        # there is no other way to store regions with associated data)
         data = self.view.settings().get('result_regions')['{0},{1}'.format(
             selected_region.a, selected_region.b)]
         self.log.debug(u'Goto comment at {filepath}:{linenum}'.format(**data))
@@ -427,6 +442,7 @@ class GotoComment(sublime_plugin.TextCommand):
 
 
 class MouseGotoComment(sublime_plugin.TextCommand):
+
     def __init__(self, *args):
         self.log = logging.getLogger('SublimeTODO.nav')
         super(MouseGotoComment, self).__init__(*args)
@@ -443,7 +459,7 @@ class MouseGotoComment(sublime_plugin.TextCommand):
     def run(self, edit):
         if not self.view.settings().get('result_regions'):
             return
-        ## get selected line
+        # get selected line
         pos = self.view.sel()[0].end()
         result = self.get_result_region(pos)
         self.highlight(result)
